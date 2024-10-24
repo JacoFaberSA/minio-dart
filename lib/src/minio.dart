@@ -26,6 +26,8 @@ class Minio {
     int? port,
     this.useSSL = true,
     this.sessionToken,
+    this.sessionExpiration,
+    this.getCredentials,
     this.region,
     this.pathStyle,
     this.enableTrace = false,
@@ -76,6 +78,9 @@ class Minio {
   /// Set this value to provide x-amz-security-token (AWS S3 specific). (Optional)
   final String? sessionToken;
 
+  /// Session expiration date
+  final DateTime? sessionExpiration;
+
   /// Set this value to override region cache. (Optional)
   final String? region;
 
@@ -84,6 +89,10 @@ class Minio {
 
   /// Set this value to enable tracing. (Optional)
   final bool enableTrace;
+
+  /// Get a new accessKey, secretKey, sessionExpiration and sessionToken if expired.
+  /// Session token and expiration are AWS S3 specific and both are required if this is set.
+  final Future<Map<String, dynamic>> Function()? getCredentials;
 
   late MinioClient _client;
   final _regionMap = <String?, String>{};

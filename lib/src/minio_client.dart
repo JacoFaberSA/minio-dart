@@ -169,7 +169,32 @@ class MinioClient {
       request.headers['x-amz-security-token'] = minio.sessionToken!;
     }
 
-    final authorization = signV4(minio, request, date, region);
+    Map<String, dynamic> credentials = {
+      'accessKey': minio.accessKey,
+      'secretKey': minio.secretKey,
+      'sessionToken': minio.sessionToken,
+    };
+
+    /// Check if the credentials are still valid and renew them if not
+    if (minio.sessionToken != null &&
+        minio.sessionExpiration != null &&
+        minio.getCredentials != null) {
+      final now = DateTime.now().toUtc();
+      if (now.isAfter(minio.sessionExpiration!.toUtc())) {
+        credentials = await minio.getCredentials!();
+      }
+    }
+
+    final authorization = signV4(
+      minio,
+      request,
+      date,
+      region,
+      accessKey: credentials['accessKey'],
+      secretKey: credentials['secretKey'],
+      sessionToken: credentials['sessionToken'],
+    );
+
     request.headers['authorization'] = authorization;
     logRequest(request);
     final response = await request.send();

@@ -11,15 +11,24 @@ String signV4(
   Minio minio,
   MinioRequest request,
   DateTime requestDate,
-  String region,
-) {
+  String region, {
+  String? accessKey,
+  String? secretKey,
+  String? sessionToken,
+}) {
+  // Update session token in headers if it exists
+  if (sessionToken != null) {
+    request.headers['x-amz-security-token'] = sessionToken;
+  }
   final signedHeaders = getSignedHeaders(request.headers.keys);
   final hashedPayload = request.headers['x-amz-content-sha256'];
   final canonicalRequest =
       getCanonicalRequest(request, signedHeaders, hashedPayload!);
   final stringToSign = getStringToSign(canonicalRequest, requestDate, region);
-  final signingKey = getSigningKey(requestDate, region, minio.secretKey);
-  final credential = getCredential(minio.accessKey, region, requestDate);
+  final signingKey =
+      getSigningKey(requestDate, region, secretKey ?? minio.secretKey);
+  final credential =
+      getCredential(accessKey ?? minio.accessKey, region, requestDate);
   final signature = hex.encode(
     Hmac(sha256, signingKey).convert(stringToSign.codeUnits).bytes,
   );
