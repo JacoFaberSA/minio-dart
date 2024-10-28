@@ -1,8 +1,8 @@
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:html/dom.dart' show Element;
 import 'package:html/parser.dart' show parse;
-import 'package:http/http.dart' as http;
 
 void main() async {
   final urls = await getAllModelUrls();
@@ -28,8 +28,9 @@ const baseUrl = 'https://docs.aws.amazon.com/AmazonS3/latest/API';
 Future<List<String>> getAllModelUrls() async {
   print('Getting Index.');
   const url = '$baseUrl/API_Types_Amazon_Simple_Storage_Service.html';
-  final page = await http.get(Uri.parse(url));
-  final document = parse(page.body);
+  final dio = Dio();
+  final page = await dio.get(url);
+  final document = parse(page.data);
   final urls = document.querySelectorAll('.listitem a');
   return urls
       .map<String>((a) => a.attributes['href']!.substring(2))
@@ -39,8 +40,9 @@ Future<List<String>> getAllModelUrls() async {
 
 Future<String> getModel(String url) async {
   print('Getting: $url.');
-  final page = await http.get(Uri.parse(url));
-  final document = parse(page.body);
+  final dio = Dio();
+  final page = await dio.get(url);
+  final document = parse(page.data);
 
   final name = document.querySelector('h1')!.text;
   final description = document
