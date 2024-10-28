@@ -1,7 +1,6 @@
 // ignore_for_file: non_constant_identifier_names
 
 import 'package:convert/convert.dart';
-import 'package:http/http.dart';
 import 'package:mime/mime.dart' show lookupMimeType;
 import 'package:minio/src/minio_client.dart';
 import 'package:minio/src/minio_errors.dart';
@@ -197,18 +196,18 @@ Map<String, String> insertContentType(
 }
 
 Future<void> validateStreamed(
-  StreamedResponse streamedResponse, {
+  MinioResponse streamedResponse, {
   int? expect,
 }) async {
-  if (streamedResponse.statusCode >= 400) {
-    final response = await MinioResponse.fromStream(streamedResponse);
-    final body = xml.XmlDocument.parse(response.body);
+  if ((streamedResponse.statusCode) >= 400) {
+    final response = streamedResponse;
+    final body = xml.XmlDocument.parse(await response.body);
     final error = Error.fromXml(body.rootElement);
     throw MinioS3Error(error.message, error, response);
   }
 
   if (expect != null && streamedResponse.statusCode != expect) {
-    final response = await MinioResponse.fromStream(streamedResponse);
+    final response = await streamedResponse;
     throw MinioS3Error(
       '$expect expected, got ${streamedResponse.statusCode}',
       null,
@@ -217,7 +216,7 @@ Future<void> validateStreamed(
   }
 }
 
-void validate(MinioResponse response, {int? expect}) {
+Future<void> validate(MinioResponse response, {int? expect}) async {
   if (response.statusCode >= 400) {
     dynamic error;
 
