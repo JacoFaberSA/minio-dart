@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
 import 'package:minio/src/minio_client.dart';
 import 'package:minio/src/minio_errors.dart';
 import 'package:minio/src/minio_helpers.dart';
@@ -97,7 +98,7 @@ class Minio {
     MinioInvalidBucketNameError.check(bucket);
     try {
       final response = await _client.request(method: 'HEAD', bucket: bucket);
-      validate(response);
+      await validate(response);
       return response.statusCode == 200;
     } on MinioS3Error catch (e) {
       final code = e.error?.code;
@@ -156,7 +157,7 @@ class Minio {
       queries: queries,
       payload: payload,
     );
-    validate(resp, expect: 200);
+    await validate(resp, expect: 200);
 
     final node = xml.XmlDocument.parse(resp.body);
     final errorNode = node.findAllElements('Error');
@@ -207,7 +208,7 @@ class Minio {
       headers: headers,
     );
 
-    validate(resp);
+    await validate(resp);
 
     final node = xml.XmlDocument.parse(resp.body);
     final result = CopyObjectResult.fromXml(node.rootElement);
@@ -259,7 +260,7 @@ class Minio {
       resource: 'notification',
     );
 
-    validate(resp, expect: 200);
+    await validate(resp, expect: 200);
 
     final node = xml.XmlDocument.parse(resp.body);
     return NotificationConfiguration.fromXml(node.rootElement);
@@ -277,7 +278,7 @@ class Minio {
       resource: 'policy',
     );
 
-    validate(resp, expect: 200);
+    await validate(resp, expect: 200);
 
     return json.decode(resp.body);
   }
@@ -301,7 +302,7 @@ class Minio {
       queries: <String, dynamic>{'location': null},
     );
 
-    validate(resp);
+    await validate(resp);
 
     final node = xml.XmlDocument.parse(resp.body);
 
@@ -381,7 +382,7 @@ class Minio {
       resource: 'uploads',
     );
 
-    validate(resp, expect: 200);
+    await validate(resp, expect: 200);
 
     final node = xml.XmlDocument.parse(resp.body);
     return node.findAllElements('UploadId').first.text;
@@ -453,7 +454,7 @@ class Minio {
       queries: queries,
     );
 
-    validate(resp);
+    await validate(resp);
 
     final node = xml.XmlDocument.parse(resp.body);
     return ListMultipartUploadsOutput.fromXml(node.root as XmlElement);
@@ -484,7 +485,7 @@ class Minio {
       method: 'GET',
       region: region ?? 'us-east-1',
     );
-    validate(resp);
+    await validate(resp);
     final bucketsNode =
         xml.XmlDocument.parse(resp.body).findAllElements('Buckets').first;
     return bucketsNode.children
@@ -573,7 +574,7 @@ class Minio {
       queries: queries,
     );
 
-    validate(resp);
+    await validate(resp);
 
     final node = xml.XmlDocument.parse(resp.body);
     final isTruncated = getNodeProp(node.rootElement, 'IsTruncated')!.text;
@@ -683,7 +684,7 @@ class Minio {
       queries: queries,
     );
 
-    validate(resp);
+    await validate(resp);
 
     final node = xml.XmlDocument.parse(resp.body);
     final isTruncated = getNodeProp(node.rootElement, 'IsTruncated')!.text;
@@ -740,7 +741,7 @@ class Minio {
       queries: queries,
     );
 
-    validate(resp);
+    await validate(resp);
 
     final node = xml.XmlDocument.parse(resp.body);
     return ListPartsOutput.fromXml(node.root as XmlElement);
@@ -767,7 +768,7 @@ class Minio {
       payload: payload,
     );
 
-    validate(resp);
+    await validate(resp);
     // return resp.body;
   }
 
@@ -856,6 +857,7 @@ class Minio {
           null,
           null,
           null,
+          null,
         )
         .url;
     var portStr = (port == 80 || port == 443) ? '' : ':$port';
@@ -918,6 +920,7 @@ class Minio {
       reqParams,
       {},
       null,
+      null,
     );
     return presignSignatureV4(this, request, region, requestDate, expires);
   }
@@ -930,6 +933,7 @@ class Minio {
     int? size,
     int? chunkSize,
     Map<String, String>? metadata,
+    CancelToken? cancelToken,
     void Function(int)? onProgress,
   }) async {
     MinioInvalidBucketNameError.check(bucket);
@@ -955,6 +959,7 @@ class Minio {
       partSize,
       metadata,
       onProgress,
+      cancelToken,
     );
     final chunker = MinChunkSize(partSize);
     final etag = await data.transform(chunker).pipe(uploader);
@@ -978,7 +983,7 @@ class Minio {
       bucket: bucket,
     );
 
-    validate(resp, expect: 204);
+    await validate(resp, expect: 204);
     _regionMap.remove(bucket);
   }
 
@@ -997,7 +1002,7 @@ class Minio {
       queries: {'uploadId': uploadId},
     );
 
-    validate(resp, expect: 204);
+    await validate(resp, expect: 204);
   }
 
   /// Remove the specified object.
@@ -1011,7 +1016,7 @@ class Minio {
       object: object,
     );
 
-    validate(resp, expect: 204);
+    await validate(resp, expect: 204);
   }
 
   /// Remove all the objects residing in the objectsList.
@@ -1052,7 +1057,7 @@ class Minio {
       payload: config.toXml().toString(),
     );
 
-    validate(resp, expect: 200);
+    await validate(resp, expect: 200);
   }
 
   /// Set the bucket policy on the specified bucket.
@@ -1074,7 +1079,7 @@ class Minio {
       payload: payload,
     );
 
-    validate(resp, expect: 204);
+    await validate(resp, expect: 204);
   }
 
   Future<void> setObjectACL(String bucket, String object, String policy) async {
@@ -1100,7 +1105,7 @@ class Minio {
       queries: {'acl': ''},
     );
 
-    validate(resp, expect: 200);
+    await validate(resp, expect: 200);
 
     return AccessControlPolicy.fromXml(
       xml.XmlDocument.parse(resp.body)
@@ -1124,7 +1129,7 @@ class Minio {
       object: object,
     );
 
-    validate(resp, expect: 200);
+    await validate(resp, expect: 200);
 
     var etag = resp.headers['etag'];
     if (etag != null) {
