@@ -2,24 +2,26 @@ import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart';
 import 'package:minio/minio.dart';
 import 'package:minio/src/minio_client.dart';
+import 'package:minio/src/minio_credentials.dart';
 import 'package:minio/src/minio_helpers.dart';
 import 'package:minio/src/utils.dart';
 
 const signV4Algorithm = 'AWS4-HMAC-SHA256';
 
-String signV4(
+Future<String> signV4(
   Minio minio,
   MinioRequest request,
   DateTime requestDate,
   String region,
-) {
+) async {
+  MinioCredentials credentials = await minio.getCredentials();
   final signedHeaders = getSignedHeaders(request.headers.keys);
   final hashedPayload = request.headers['x-amz-content-sha256'];
   final canonicalRequest =
       getCanonicalRequest(request, signedHeaders, hashedPayload!);
   final stringToSign = getStringToSign(canonicalRequest, requestDate, region);
-  final signingKey = getSigningKey(requestDate, region, minio.secretKey);
-  final credential = getCredential(minio.accessKey, region, requestDate);
+  final signingKey = getSigningKey(requestDate, region, credentials.secretKey);
+  final credential = getCredential(credentials.accessKey, region, requestDate);
   final signature = hex.encode(
     Hmac(sha256, signingKey).convert(stringToSign.codeUnits).bytes,
   );
@@ -100,13 +102,13 @@ String getCredential(String accessKey, String region, DateTime requestDate) {
 }
 
 // returns a presigned URL string
-String presignSignatureV4(
+Future<String> presignSignatureV4(
   Minio minio,
   MinioRequest request,
   String region,
   DateTime requestDate,
   int expires,
-) {
+) async {
   if (expires < 1) {
     throw MinioExpiresParamError('expires param cannot be less than 1 seconds');
   }
@@ -114,9 +116,11 @@ String presignSignatureV4(
     throw MinioExpiresParamError('expires param cannot be greater than 7 days');
   }
 
+  MinioCredentials credentials = await minio.getCredentials();
+
   final iso8601Date = makeDateLong(requestDate);
   final signedHeaders = getSignedHeaders(request.headers.keys);
-  final credential = getCredential(minio.accessKey, region, requestDate);
+  final credential = getCredential(credentials.accessKey, region, requestDate);
 
   final requestQuery = <String, String?>{};
   requestQuery['X-Amz-Algorithm'] = signV4Algorithm;
@@ -124,8 +128,8 @@ String presignSignatureV4(
   requestQuery['X-Amz-Date'] = iso8601Date;
   requestQuery['X-Amz-Expires'] = expires.toString();
   requestQuery['X-Amz-SignedHeaders'] = signedHeaders.join(';').toLowerCase();
-  if (minio.sessionToken != null) {
-    requestQuery['X-Amz-Security-Token'] = minio.sessionToken;
+  if (credentials.sessionToken != null) {
+    requestQuery['X-Amz-Security-Token'] = credentials.sessionToken;
   }
 
   request = request.replace(
@@ -141,7 +145,7 @@ String presignSignatureV4(
       getCanonicalRequest(request, signedHeaders, 'UNSIGNED-PAYLOAD');
 
   final stringToSign = getStringToSign(canonicalRequest, requestDate, region);
-  final signingKey = getSigningKey(requestDate, region, minio.secretKey);
+  final signingKey = getSigningKey(requestDate, region, credentials.secretKey);
   final signature = sha256HmacHex(stringToSign, signingKey);
   final presignedUrl = '${request.url}&X-Amz-Signature=$signature';
 

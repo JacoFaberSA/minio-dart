@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:minio/src/minio_client.dart';
+import 'package:minio/src/minio_credentials.dart';
 import 'package:minio/src/minio_errors.dart';
 import 'package:minio/src/minio_helpers.dart';
 import 'package:minio/src/minio_models.dart';
@@ -27,6 +28,8 @@ class Minio {
     int? port,
     this.useSSL = true,
     this.sessionToken,
+    this.expiration,
+    this.renewCredentials,
     this.region,
     this.pathStyle,
     this.enableTrace = false,
@@ -76,6 +79,12 @@ class Minio {
 
   /// Set this value to provide x-amz-security-token (AWS S3 specific). (Optional)
   final String? sessionToken;
+
+  /// Expiry of the session token (AWS S3 specific). (Optional)
+  final DateTime? expiration;
+
+  /// Function to renew expired session token (AWS S3 specific). (Optional)
+  final Future<MinioCredentials> Function(MinioCredentials)? renewCredentials;
 
   /// Set this value to override region cache. (Optional)
   final String? region;
@@ -1143,5 +1152,33 @@ class Minio {
       lastModified: parseRfc7231Time(resp.headers['last-modified']!),
       acl: retrieveAcls ? await getObjectACL(bucket, object) : null,
     );
+  }
+
+  /// Internal credentials cache.
+  MinioCredentials? _credentials;
+
+  /// Get the credentials.
+  Future<MinioCredentials> getCredentials() async {
+    /// Initialize credentials if not already initialized.
+    _credentials ??= MinioCredentials(
+      accessKey,
+      secretKey,
+      sessionToken: sessionToken,
+      expiration: expiration,
+    );
+
+    /// If the credentials cannot be renewed, always return the existing credentials.
+    if (renewCredentials == null ||
+        !_credentials!.hasSessionToken ||
+        !_credentials!.hasExpiration) {
+      return _credentials!;
+    }
+
+    /// If the credentials are expired, renew them.
+    if (_credentials!.isExpired) {
+      _credentials = await renewCredentials!(_credentials!);
+    }
+
+    return _credentials!;
   }
 }
