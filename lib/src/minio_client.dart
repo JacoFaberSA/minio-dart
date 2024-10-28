@@ -2,63 +2,23 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:http/http.dart';
+import 'package:dio/dio.dart';
 import 'package:minio/minio.dart';
 import 'package:minio/src/minio_helpers.dart';
 import 'package:minio/src/minio_s3.dart';
 import 'package:minio/src/minio_sign.dart';
 import 'package:minio/src/utils.dart';
 
-class MinioRequest extends StreamedRequest {
-  MinioRequest(super.method, super.url, {this.onProgress});
+class MinioRequest {
+  MinioRequest(this.method, this.url, {this.onProgress, this.cancelToken});
+
+  final String method;
+  final Uri url;
+  final void Function(int)? onProgress;
+  final CancelToken? cancelToken;
 
   dynamic body;
-
-  final void Function(int)? onProgress;
-
-  @override
-  ByteStream finalize() {
-    super.finalize();
-
-    if (body == null) {
-      return const ByteStream(Stream.empty());
-    }
-
-    late Stream<Uint8List> stream;
-
-    if (body is Stream<Uint8List>) {
-      stream = body;
-    } else if (body is String) {
-      final data = const Utf8Encoder().convert(body);
-      headers['content-length'] = data.length.toString();
-      stream = Stream<Uint8List>.value(data);
-    } else if (body is Uint8List) {
-      stream = Stream<Uint8List>.value(body);
-      headers['content-length'] = body.length.toString();
-    } else {
-      throw UnsupportedError('Unsupported body type: ${body.runtimeType}');
-    }
-
-    if (onProgress == null) {
-      return ByteStream(stream);
-    }
-
-    var bytesRead = 0;
-
-    stream = stream.transform(MaxChunkSize(1 << 16));
-
-    return ByteStream(
-      stream.transform(
-        StreamTransformer.fromHandlers(
-          handleData: (data, sink) {
-            sink.add(data);
-            bytesRead += data.length;
-            onProgress!(bytesRead);
-          },
-        ),
-      ),
-    );
-  }
+  Map<String, String> headers = {};
 
   MinioRequest replace({
     String? method,
@@ -71,45 +31,107 @@ class MinioRequest extends StreamedRequest {
     result.headers.addAll(headers ?? this.headers);
     return result;
   }
+
+  Future<Response<ResponseBody>> send() async {
+    var dio = Dio();
+    dio.options.headers = headers;
+    dio.options.responseType = ResponseType.stream;
+
+    try {
+      Response<ResponseBody> response = await dio.request(
+        url.toString(),
+        data: body,
+        cancelToken: cancelToken,
+        options: Options(
+          method: method,
+          headers: headers,
+          responseType: ResponseType.stream,
+        ),
+        onReceiveProgress: (p, t) => onProgress?.call(p),
+        onSendProgress: (p, t) => onProgress?.call(p),
+      );
+
+      return response;
+    } on DioException catch (e) {
+      return Response(
+        requestOptions: e.requestOptions,
+        extra: e.response?.extra,
+        data: e.response?.data,
+        headers: e.response?.headers,
+        statusCode: e.response?.statusCode,
+        statusMessage: e.response?.statusMessage,
+      );
+    }
+  }
 }
 
 /// An HTTP response where the entire response body is known in advance.
-class MinioResponse extends BaseResponse {
+class MinioResponse {
   /// Create a new HTTP response with a byte array body.
-  MinioResponse.bytes(
+  MinioResponse(
     this.bodyBytes,
-    int statusCode, {
-    BaseRequest? request,
-    Map<String, String> headers = const {},
-    bool isRedirect = false,
-    bool persistentConnection = true,
-    String? reasonPhrase,
-  }) : super(
-          statusCode,
-          contentLength: bodyBytes.length,
-          request: request,
-          headers: headers,
-          isRedirect: isRedirect,
-          persistentConnection: persistentConnection,
-          reasonPhrase: reasonPhrase,
-        );
+    this.statusCode, {
+    this.request,
+    this.headers = const {},
+    this.isRedirect = false,
+    this.persistentConnection = true,
+    this.reasonPhrase,
+  });
 
-  /// The bytes comprising the body of this response.
-  final Uint8List bodyBytes;
+  /// Response with a byte array body.
+  Stream<Uint8List> get stream =>
+      Stream.fromIterable([Uint8List.fromList(bodyBytes)]);
 
-  /// Body of s3 response is always encoded as UTF-8.
+  /// Status code of the response.
+  final int statusCode;
+
+  /// The request for which this response was received.
+  final RequestOptions? request;
+
+  /// The headers associated with this response.
+  final Map<String, String> headers;
+
+  /// Whether this response is a redirect.
+  final bool isRedirect;
+
+  /// Whether the connection to the server should be kept alive after this response is received.
+  final bool persistentConnection;
+
+  /// The reason phrase associated with the status code.
+  final String? reasonPhrase;
+
+  final List<int> bodyBytes;
+
+  /// Decode bodyBytes to a UTF-8 string when accessing as body
   String get body => utf8.decode(bodyBytes);
 
-  static Future<MinioResponse> fromStream(StreamedResponse response) async {
-    final body = await response.stream.toBytes();
-    return MinioResponse.bytes(
-      body,
-      response.statusCode,
-      request: response.request,
-      headers: response.headers,
+  /// Content stream of the response.
+
+  /// Content length of the response.
+  int get contentLength => int.parse(headers['content-length'] ?? '-1');
+
+  static Future<MinioResponse> fromStream(
+    Response<ResponseBody> response,
+  ) async {
+    // Read and accumulate all bytes from the response stream
+    final bodyBytes = <int>[];
+    await for (var chunk in response.data!.stream) {
+      bodyBytes.addAll(chunk);
+    }
+
+    return MinioResponse(
+      bodyBytes,
+      response.statusCode ?? 0,
+      request: response.requestOptions,
+      headers: response.headers.map.map(
+        (key, value) => MapEntry(
+          key,
+          value.join(','),
+        ),
+      ),
       isRedirect: response.isRedirect,
-      persistentConnection: response.persistentConnection,
-      reasonPhrase: response.reasonPhrase,
+      persistentConnection: response.requestOptions.persistentConnection,
+      reasonPhrase: response.statusMessage,
     );
   }
 }
@@ -128,7 +150,7 @@ class MinioClient {
   late bool anonymous;
   late final int port;
 
-  Future<StreamedResponse> _request({
+  Future<Response<ResponseBody>> _request({
     required String method,
     String? bucket,
     String? object,
@@ -138,6 +160,7 @@ class MinioClient {
     Map<String, dynamic>? queries,
     Map<String, String>? headers,
     void Function(int)? onProgress,
+    CancelToken? cancelToken,
   }) async {
     if (bucket != null) {
       region ??= await minio.getBucketRegion(bucket);
@@ -154,6 +177,7 @@ class MinioClient {
       queries,
       headers,
       onProgress,
+      cancelToken,
     );
     request.body = payload;
 
@@ -186,6 +210,7 @@ class MinioClient {
     Map<String, dynamic>? queries,
     Map<String, String>? headers,
     void Function(int)? onProgress,
+    CancelToken? cancelToken,
   }) async {
     final stream = await _request(
       method: method,
@@ -197,6 +222,7 @@ class MinioClient {
       queries: queries,
       headers: headers,
       onProgress: onProgress,
+      cancelToken: cancelToken,
     );
 
     final response = await MinioResponse.fromStream(stream);
@@ -205,7 +231,7 @@ class MinioClient {
     return response;
   }
 
-  Future<StreamedResponse> requestStream({
+  Future<MinioResponse> requestStream({
     required String method,
     String? bucket,
     String? object,
@@ -214,8 +240,9 @@ class MinioClient {
     dynamic payload = '',
     Map<String, dynamic>? queries,
     Map<String, String>? headers,
+    CancelToken? cancelToken,
   }) async {
-    final response = await _request(
+    final _response = await _request(
       method: method,
       bucket: bucket,
       object: object,
@@ -224,7 +251,10 @@ class MinioClient {
       resource: resource,
       queries: queries,
       headers: headers,
+      cancelToken: cancelToken,
     );
+
+    MinioResponse response = await MinioResponse.fromStream(_response);
 
     logResponse(response);
     return response;
@@ -239,9 +269,11 @@ class MinioClient {
     Map<String, dynamic>? queries,
     Map<String, String>? headers,
     void Function(int)? onProgress,
+    CancelToken? cancelToken,
   ) {
     final url = getRequestUrl(bucket, object, resource, queries);
-    final request = MinioRequest(method, url, onProgress: onProgress);
+    final request = MinioRequest(method, url,
+        onProgress: onProgress, cancelToken: cancelToken);
     request.headers['host'] = url.authority;
 
     if (headers != null) {
@@ -310,7 +342,7 @@ class MinioClient {
     print(buffer.toString());
   }
 
-  void logResponse(BaseResponse response) {
+  void logResponse(MinioResponse response) {
     if (!minio.enableTrace) return;
 
     final buffer = StringBuffer();
@@ -319,9 +351,9 @@ class MinioClient {
       buffer.writeln('${header.key}: ${header.value}');
     }
 
-    if (response is Response) {
+    if (response.request?.responseType == ResponseType.json) {
       buffer.writeln(response.body);
-    } else if (response is StreamedResponse) {
+    } else if (response.request?.responseType == ResponseType.stream) {
       buffer.writeln('STREAMED BODY');
     }
 

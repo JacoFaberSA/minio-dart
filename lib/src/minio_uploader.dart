@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart';
+import 'package:dio/dio.dart';
 import 'package:minio/minio.dart';
 import 'package:minio/models.dart';
 import 'package:minio/src/minio_client.dart';
@@ -21,6 +22,7 @@ class MinioUploader implements StreamConsumer<Uint8List> {
     this.partSize,
     this.metadata,
     this.onProgress,
+    this.cancelToken,
   );
 
   final Minio minio;
@@ -30,6 +32,7 @@ class MinioUploader implements StreamConsumer<Uint8List> {
   final int partSize;
   final Map<String, String> metadata;
   final void Function(int)? onProgress;
+  final CancelToken? cancelToken;
 
   var _partNumber = 1;
 
@@ -126,6 +129,7 @@ class MinioUploader implements StreamConsumer<Uint8List> {
       object: object,
       payload: chunk,
       onProgress: _updateProgress,
+      cancelToken: cancelToken,
     );
 
     validate(resp);
