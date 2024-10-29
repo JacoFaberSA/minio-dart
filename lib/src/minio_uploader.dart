@@ -50,10 +50,11 @@ class MinioUploader implements StreamConsumer<Uint8List> {
 
   @override
   Future addStream(Stream<Uint8List> stream) async {
+    final headers = <String, String>{};
+    headers.addAll(metadata);
+
     await for (var chunk in stream) {
       List<int>? md5digest;
-      final headers = <String, String>{};
-      headers.addAll(metadata);
       headers['Content-Length'] = chunk.length.toString();
       if (!client.enableSHA256) {
         md5digest = md5.convert(chunk).bytes;
@@ -91,6 +92,7 @@ class MinioUploader implements StreamConsumer<Uint8List> {
       final etag = await _uploadChunk(chunk, headers, queries);
       final part = CompletedPart(etag, partNumber);
       _parts[part] = chunk.length;
+      chunk = Uint8List(0);
     }
   }
 

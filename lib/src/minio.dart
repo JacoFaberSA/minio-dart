@@ -970,6 +970,7 @@ class Minio {
       onProgress,
       cancelToken,
     );
+
     final chunker = MinChunkSize(partSize);
     final etag = await data.transform(chunker).pipe(uploader);
     return etag.toString();
@@ -1171,11 +1172,19 @@ class Minio {
     if (renewCredentials == null ||
         !_credentials!.hasSessionToken ||
         !_credentials!.hasExpiration) {
+      print("returning credentials, credentials cannot be renewed");
       return _credentials!;
     }
 
+    print("Has session token: ${_credentials!.hasSessionToken}");
+    print("Has expiration: ${_credentials!.hasExpiration}");
+    print(
+        "Checking expiration ${_credentials!.expiration} and comparing to ${DateTime.now()}");
+    print("Is expired: ${_credentials!.isExpired}");
+
     /// If the credentials are expired, renew them.
     if (_credentials!.isExpired) {
+      print("credentials are expired, renewing credentials");
       _credentials = await renewCredentials!(_credentials!);
     }
 

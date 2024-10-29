@@ -94,8 +94,6 @@ class MinChunkSize extends StreamTransformerBase<Uint8List, Uint8List> {
 
   final int size;
 
-  var _yielded = false;
-
   @override
   Stream<Uint8List> bind(Stream<Uint8List> stream) async* {
     var buffer = BytesBuilder(copy: false);
@@ -103,15 +101,14 @@ class MinChunkSize extends StreamTransformerBase<Uint8List, Uint8List> {
     await for (var chunk in stream) {
       buffer.add(chunk);
 
-      if (buffer.length < size) {
-        continue;
+      // Yield `size` bytes at a time from buffer if it meets or exceeds `size`.
+      while (buffer.length >= size) {
+        yield Uint8List.sublistView(buffer.takeBytes(), 0, size);
       }
-
-      yield buffer.takeBytes();
-      _yielded = true;
     }
 
-    if (buffer.isNotEmpty || !_yielded) {
+    // Yield any remaining bytes in the buffer.
+    if (buffer.isNotEmpty) {
       yield buffer.takeBytes();
     }
   }

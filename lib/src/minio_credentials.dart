@@ -1,6 +1,10 @@
 class MinioCredentials {
-  MinioCredentials(this.accessKey, this.secretKey,
-      {this.sessionToken, this.expiration});
+  MinioCredentials(
+    this.accessKey,
+    this.secretKey, {
+    this.sessionToken,
+    this.expiration,
+  });
 
   /// accessKey is like user-id that uniquely identifies your account.
   final String accessKey;
@@ -21,8 +25,8 @@ class MinioCredentials {
   bool get isExpired =>
       expiration != null &&
       expiration!.isBefore(
-        DateTime.now().subtract(
-          const Duration(minutes: 15),
-        ),
+        DateTime.now().toUtc().add(
+              const Duration(minutes: 15),
+            ),
       );
 }
