@@ -1179,13 +1179,17 @@ class Minio {
     print("Has session token: ${_credentials!.hasSessionToken}");
     print("Has expiration: ${_credentials!.hasExpiration}");
     print(
-        "Checking expiration ${_credentials!.expiration} and comparing to ${DateTime.now()}");
+        "Checking expiration ${_credentials!.expiration} and comparing to ${DateTime.now().toUtc().add(Duration(minutes: 15))}");
     print("Is expired: ${_credentials!.isExpired}");
 
     /// If the credentials are expired, renew them.
     if (_credentials!.isExpired) {
       print("credentials are expired, renewing credentials");
-      _credentials = await renewCredentials!(_credentials!);
+      try {
+        _credentials = await renewCredentials!(_credentials!);
+      } catch (e) {
+        print("Error renewing credentials: $e");
+      }
     }
 
     return _credentials!;

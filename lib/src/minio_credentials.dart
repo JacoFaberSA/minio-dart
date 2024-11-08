@@ -23,7 +23,7 @@ class MinioCredentials {
   bool get hasExpiration => expiration != null;
 
   bool get isExpired =>
-      expiration != null &&
+      expiration == null ||
       expiration!.isBefore(
         DateTime.now().toUtc().add(
               const Duration(minutes: 15),
